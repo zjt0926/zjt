@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>今日事 - 日历待办清单</title>
+<link rel="stylesheet" href="/static/css/style.css?v=3">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">✓</span>
+    <div class="brand-text">
+      <h1>今日事</h1>
+      <p id="todayText"></p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <div class="month-nav">
+      <button id="prevMonth" class="nav-btn" title="上一月">‹</button>
+      <span id="monthLabel"></span>
+      <button id="nextMonth" class="nav-btn" title="下一月">›</button>
+      <button id="todayBtn" class="btn-today">今天</button>
+    </div>
+    <button id="settingsBtn" class="icon-btn" title="背景设置">⚙</button>
+  </div>
+</header>
+
+<section class="quick-add">
+  <div class="qa-box">
+    <span class="qa-icon">＋</span>
+    <input id="quickInput" autocomplete="off"
+           placeholder="快速添加，如：明天下午3点 复习高数 !重要   /   周五交作业   /   30分钟后取快递">
+    <button id="addBtn">添加</button>
+  </div>
+  <div id="preview" class="preview hidden"></div>
+</section>
+
+<main class="layout">
+  <section class="calendar-card">
+    <div class="cal-head">
+      <span>一</span><span>二</span><span>三</span><span>四</span>
+      <span>五</span><span class="wk">六</span><span class="wk">日</span>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-legend" id="legend"></div>
+  </section>
+
+  <aside class="day-panel">
+    <div class="day-head">
+      <div>
+        <h2 id="dayTitle"></h2>
+        <span id="dayCount" class="day-count"></span>
+      </div>
+      <button id="addDayBtn" class="btn-ghost" title="为这一天添加待办">＋ 这天添加</button>
+    </div>
+    <div class="day-list" id="dayList"></div>
+    <div class="day-empty hidden" id="dayEmpty">这一天还没有安排<br>点上方输入框快速添加</div>
+  </aside>
+</main>
+
+<!-- 编辑弹窗 -->
+<div class="modal-mask hidden" id="modalMask">
+  <div class="modal">
+    <h3 id="modalTitle">编辑待办</h3>
+    <label class="f-label">标题<input id="fTitle" class="f-input"></label>
+    <div class="row2">
+      <label class="f-label">日期<input type="date" id="fDate" class="f-input"></label>
+      <label class="f-label">提醒时间<input type="datetime-local" id="fRemind" class="f-input"></label>
+    </div>
+    <div class="row2">
+      <label class="f-label">分类<select id="fTag" class="f-input"></select></label>
+      <label class="f-label">备注<input id="fNote" class="f-input" placeholder="选填"></label>
+    </div>
+    <label class="check-label"><input type="checkbox" id="fImportant"> ⭐ 标记为重要事项</label>
+    <div class="modal-actions">
+      <button id="clearRemind" class="btn-ghost">清除提醒</button>
+      <span class="spacer"></span>
+      <button id="modalCancel" class="btn-ghost">取消</button>
+      <button id="modalSave" class="btn-primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 居中提醒询问框 -->
+<div class="ask-mask hidden" id="askMask">
+  <div class="ask-box">
+    <div class="ask-icon">⏰</div>
+    <h3>待办已添加</h3>
+    <p class="ask-date" id="askDate"></p>
+    <p class="ask-title" id="askTitle"></p>
+    <p class="ask-q">是否为它设置提醒时间？</p>
+    <div class="ask-actions">
+      <button id="askNo" class="btn-ghost ask-btn">不用了</button>
+      <button id="askYes" class="btn-primary ask-btn">⏰ 设置提醒</button>
+    </div>
+  </div>
+</div>
+
+<!-- 背景设置弹窗 -->
+<div class="modal-mask hidden" id="settingsMask">
+  <div class="modal settings-modal">
+    <h3>🎨 背景设置</h3>
+    <p class="settings-tip">选择喜欢的背景，设置会自动保存</p>
+    <div class="bg-grid" id="bgGrid"></div>
+    <div class="custom-bg">
+      <label class="f-label" style="margin-bottom:0">自定义颜色
+        <span class="custom-row">
+          <input type="color" id="bgColor" value="#f4f5fb">
+          <button id="bgApply" class="btn-ghost">应用</button>
+        </span>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button id="bgReset" class="btn-ghost">恢复默认</button>
+      <span class="spacer"></span>
+      <button id="settingsClose" class="btn-primary">完成</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="/static/js/app.js?v=3"></script>
+</body>
+</html>
