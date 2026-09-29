@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}本班材料列表 · CampusClaw{% endblock %}
+{% block content %}
+
+{% if request.args.get('upload_error') %}
+<div class="pku-alert" style="background:#fef0f0;color:#94070a;border-color:#fbc4c4;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
+  {{ request.args.get('upload_error') }}
+</div>
+{% endif %}
+{% if request.args.get('upload_ok') %}
+<div class="pku-alert" style="background:#f0f9ff;color:#1565c0;border-color:#b3d8ff;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
+  {{ request.args.get('upload_ok') }}
+</div>
+{% endif %}
+{% if request.args.get('delete_ok') %}
+<div class="pku-alert" style="background:#f0f9ff;color:#1565c0;border-color:#b3d8ff;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
+  {{ request.args.get('delete_ok') }}
+</div>
+{% endif %}
+{% if request.args.get('delete_error') %}
+<div class="pku-alert" style="background:#fef0f0;color:#94070a;border-color:#fbc4c4;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
+  {{ request.args.get('delete_error') }}
+</div>
+{% endif %}
+
+<div class="pku-card">
+  <h2>本班材料列表</h2>
+  <p style="margin-bottom:16px;font-size:14px;color:var(--pku-text-light)">
+    当前角色：
+    <span class="pku-badge {{ 'pku-badge-teacher' if role == 'teacher' else 'pku-badge-student' }}">{{ '教师' if role == 'teacher' else '学生' }}</span>
+    班级ID：{{ class_id }}
+  </p>
+
+  {% if materials %}
+    <table class="pku-table">
+      <thead>
+        <tr><th>标题</th><th width="100">ID</th><th width="120">上传时间</th><th width="140">操作</th></tr>
+      </thead>
+      <tbody>
+        {% for m in materials %}
+        <tr>
+          <td><a href="/materials/{{ m.id }}">{{ m.title }}</a></td>
+          <td>{{ m.id }}</td>
+          <td>{{ m.created_at[:16] if m.created_at else '-' }}</td>
+          <td>
+            {% if m.file_path %}
+              <a href="/materials/{{ m.id }}/download">下载</a>
+            {% else %}
+              -
+            {% endif %}
+            {% if role == 'teacher' or m.uploaded_by == session.get('user_id') %}
+              <form method="post" action="/materials/{{ m.id }}/delete" style="display:inline;margin-left:8px"
+                    onsubmit="return confirm('确定删除「{{ m.title }}」？')">
+                <button type="submit" style="background:none;border:none;color:#94070a;cursor:pointer;font-size:14px">删除</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="pku-empty">暂无材料</div>
+  {% endif %}
+</div>
+
+{% if role == 'teacher' %}
+<div class="pku-card">
+  <h2>上传材料</h2>
+  <form method="post" action="/materials/upload" enctype="multipart/form-data">
+    <div class="pku-form-group">
+      <label>标题（留空则使用文件名）</label>
+      <input type="text" name="title">
+    </div>
+    <div class="pku-form-group">
+      <label>文件（支持 .txt / .md）</label>
+      <input type="file" name="file" accept=".txt,.md" required>
+    </div>
+    <button type="submit" class="pku-btn">上传</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

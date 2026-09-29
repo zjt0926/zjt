@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}知识库检索 · CampusClaw{% endblock %}
+{% block content %}
+<style>
+  .search-box {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .search-box input[type="text"] {
+    flex: 1;
+    min-width: 200px;
+    padding: 12px 16px;
+    border: 1px solid var(--pku-gray-border);
+    border-radius: 4px;
+    font-size: 15px;
+  }
+  .search-box input:focus {
+    outline: none;
+    border-color: var(--pku-crimson);
+    box-shadow: 0 0 0 3px rgba(148,7,10,0.1);
+  }
+  .search-box select {
+    padding: 12px 14px;
+    border: 1px solid var(--pku-gray-border);
+    border-radius: 4px;
+    font-size: 14px;
+    background: var(--pku-white);
+    cursor: pointer;
+  }
+  .hit {
+    border: 1px solid var(--pku-gray-border);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+  }
+  .hit-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .hit-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .hit-title a { color: var(--pku-crimson); text-decoration: none; }
+  .hit-title a:hover { text-decoration: underline; }
+  .hit-score {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--pku-text-light);
+    background: var(--pku-gray-bg);
+    padding: 2px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+  .hit-snippet {
+    font-size: 14px;
+    color: var(--pku-text);
+    background: #fafafa;
+    border-left: 3px solid var(--pku-gold);
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    white-space: pre-wrap;
+    line-height: 1.7;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .hit-snippet mark {
+    background: #ffe9a8;
+    padding: 0 2px;
+    border-radius: 2px;
+  }
+  .hit-meta {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--pku-text-light);
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .hit-meta a { color: var(--pku-crimson); text-decoration: none; }
+  .hit-meta a:hover { text-decoration: underline; }
+  .scope-note {
+    font-size: 13px;
+    color: var(--pku-text-light);
+    margin-top: 10px;
+  }
+  .mode-desc {
+    font-size: 12px;
+    color: var(--pku-text-light);
+    margin-top: 6px;
+  }
+</style>
+
+<div class="pku-card">
+  <h2>知识库检索</h2>
+  <form method="get" action="/search" class="search-box">
+    <input type="text" name="q" value="{{ q }}" placeholder="输入问题或关键词，仅检索本班材料…" autofocus>
+    <select name="mode">
+      <option value="hybrid" {{ 'selected' if mode == 'hybrid' else '' }}>混合检索</option>
+      <option value="keyword" {{ 'selected' if mode == 'keyword' else '' }}>关键词检索</option>
+      <option value="vector" {{ 'selected' if mode == 'vector' else '' }}>语义检索</option>
+    </select>
+    <button type="submit" class="pku-btn">检索</button>
+  </form>
+  <div class="scope-note">
+    检索范围：班级 ID {{ class_id }}（服务端按登录会话强制隔离，无法检索其他班级内容）
+  </div>
+  <div class="mode-desc">
+    {% if mode == 'keyword' %}关键词检索：直接匹配原文中的词，不调用向量嵌入{% elif mode == 'vector' %}语义检索：问句转向量后按余弦相似度匹配，低于 0.35 的结果不予保留{% else %}混合检索：同时执行关键词与语义路径，两路均命中的排序更靠前{% endif %}
+  </div>
+</div>
+
+{% if q %}
+<div class="pku-card">
+  <h2>检索结果</h2>
+  {% if results %}
+    <p style="font-size:13px;color:var(--pku-text-light);margin-bottom:16px">
+      “{{ q }}” 共匹配 {{ results|length }} 个片段（模式：{{ mode }}）
+    </p>
+    {% for r in results %}
+    <div class="hit">
+      <div class="hit-head">
+        <div class="hit-title">
+          <a href="/materials/{{ r.material_id }}">{{ r.title }}</a>
+        </div>
+        <div class="hit-score">相似度 {{ '%.3f'|format(r.score) }}</div>
+      </div>
+      <div class="hit-snippet">{{ r.snippet_html }}</div>
+      <div class="hit-meta">
+        <span>溯源：材料 #{{ r.material_id }} · 片段 #{{ r.chunk_index }} · 字符区间 [{{ r.char_start }}, {{ r.char_end }})</span>
+        <a href="/materials/{{ r.material_id }}">查看材料</a>
+        <a href="/materials/{{ r.material_id }}/download">下载原文件</a>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="pku-empty">{{ no_match_msg or '本班知识库中未找到相关内容' }}</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

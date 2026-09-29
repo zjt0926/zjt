@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ material.title }} · CampusClaw{% endblock %}
+{% block content %}
+<div class="pku-card">
+  <h2>{{ material.title }}</h2>
+  <p style="font-size:14px;color:var(--pku-text-light);margin-bottom:20px">
+    材料ID：{{ material.id }}
+  </p>
+  {% if material.file_path %}
+    <div style="margin-bottom:20px">
+      <a href="/materials/{{ material.id }}/download" class="pku-btn">下载文件</a>
+    </div>
+  {% else %}
+    <div class="pku-alert" style="margin-bottom:20px">该材料为种子数据，无可下载文件</div>
+  {% endif %}
+
+  {% if body %}
+    <h3 style="font-size:16px;margin-bottom:10px">材料内容</h3>
+    <pre style="font-size:14px;line-height:1.8;white-space:pre-wrap;word-break:break-word;background:#fafafa;border:1px solid var(--pku-gray-border);border-left:3px solid var(--pku-gold);border-radius:0 4px 4px 0;padding:14px 18px;margin-bottom:8px">{{ body }}</pre>
+    {% if truncated %}
+      <p style="font-size:13px;color:var(--pku-text-light);margin-bottom:16px">
+        内容过长，仅显示前 {{ 100000 }} 个字符，完整内容请下载原文件查看。
+      </p>
+    {% endif %}
+  {% else %}
+    <div class="pku-alert" style="margin-bottom:20px">该材料暂无可预览内容</div>
+  {% endif %}
+
+  <div class="pku-link-row">
+    <a href="/materials">返回列表</a>
+  </div>
+</div>
+{% endblock %}
