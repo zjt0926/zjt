@@ -23,8 +23,9 @@ ENV DATABASE_PATH=/app/data/app.db \
 EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-# Single worker: ChromaDB's local PersistentClient keeps per-process
-# reader caches, so multiple workers could serve stale vector state
-# after another process writes. The app is I/O-light; one worker is
-# sufficient and keeps read/write state consistent.
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "run:app"]
+# Single process with a thread pool: ChromaDB's local PersistentClient
+# keeps per-process reader caches, so multiple worker PROCESSES could
+# serve stale vector state after another process writes. Threads share
+# the process (state stays consistent) and let an in-flight SSE stream
+# coexist with other requests (health checks, page loads).
+CMD ["gunicorn", "-w", "1", "-k", "gthread", "--threads", "4", "-b", "0.0.0.0:8080", "run:app"]

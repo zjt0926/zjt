@@ -46,6 +46,7 @@ python run.py                    # http://localhost:8080
 ## 安全说明
 
 - 密码使用 bcrypt 哈希存储（`password_hash` 列，`$2b$` 前缀），禁止明文。
-- 会话签名密钥 `SECRET_KEY` 仅通过环境变量注入，源码不含默认值；缺失时应用启动失败。
-- 所有材料/知识库查询在服务端按 `session.class_id` 过滤，路由忽略客户端传入的 `class_id`。
+- Token 签名密钥 `SECRET_KEY` 仅通过环境变量注入，源码不含默认值；缺失时应用启动失败。
+- 登录成功后由服务端签发 JWT，客户端将其存放在 `localStorage`，并在每个受保护请求上以 `Authorization: Bearer <token>` 请求头发送；不使用 cookie 或会话。
+- 所有材料/知识库查询在服务端按 token 载荷中的 `class_id` 过滤，路由忽略客户端传入的 `class_id`。
 - 跨班按 ID 访问统一返回 **404**（不区分"不存在"与"无权"，避免泄露他班记录是否存在）。

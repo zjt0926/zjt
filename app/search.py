@@ -1,19 +1,20 @@
 """Class-scoped knowledge base retrieval with three modes (keyword / vector / hybrid).
 
-The viewer's ``class_id`` is always taken from the session; both the
-vector store and the FTS query enforce it. Excerpts come from the
+The viewer's ``class_id`` is always taken from the verified token; both
+the vector store and the FTS query enforce it. Excerpts come from the
 SQLite chunks table, not the vector store (per knowledge-retrieval spec).
 """
 
 import re
 
 import jieba
-from flask import Blueprint, jsonify, render_template, request, session
+from flask import Blueprint, g, jsonify, request
 from markupsafe import Markup, escape
 
 from . import vectorstore
 from .auth import login_required
 from .db import get_chunk, keyword_search, substring_search
+from .openapi import api_spec
 
 bp = Blueprint("search", __name__)
 
@@ -86,14 +87,18 @@ def _rrf_fuse(vector_hits, keyword_hits, k=60):
     ]
 
 
-def _keyword_hits(class_id, query, k, db_path):
+def _keyword_hits(class_id, query, k, db_path, material_ids=None):
     """FTS keyword hits merged with substring hits (deduped, FTS first).
 
     The substring pass catches queries that are fragments of untokenizable
     strings (e.g. "LAT" inside an access key), which FTS5 can never match.
     """
-    fts_hits = keyword_search(class_id, query, k=k, db_path=db_path)
-    sub_hits = substring_search(class_id, query, k=k, db_path=db_path)
+    fts_hits = keyword_search(
+        class_id, query, k=k, db_path=db_path, material_ids=material_ids
+    )
+    sub_hits = substring_search(
+        class_id, query, k=k, db_path=db_path, material_ids=material_ids
+    )
     seen = {(h["material_id"], h["chunk_index"]) for h in fts_hits}
     merged = list(fts_hits)
     merged.extend(
@@ -126,8 +131,22 @@ def _has_token_overlap(hit, terms, class_id, db_path) -> bool:
     return bool(terms & chunk_tokens)
 
 
-def do_search(class_id, query, mode, k=RESULT_LIMIT, db_path=None, vector_path=None):
-    """Dispatch to the selected search mode and return enriched hits."""
+def do_search(
+    class_id,
+    query,
+    mode,
+    k=RESULT_LIMIT,
+    db_path=None,
+    vector_path=None,
+    material_ids=None,
+):
+    """Dispatch to the selected search mode and return enriched hits.
+
+    ``material_ids`` optionally narrows the search to the given materials
+    (the agent-scope filter); the class filter always applies on top.
+    ``None`` means "no extra restriction" (plain class-wide search); an
+    empty list means "no materials to search" (empty result).
+    """
     from flask import current_app
     if db_path is None:
         db_path = current_app.config["DATABASE"]
@@ -135,31 +154,51 @@ def do_search(class_id, query, mode, k=RESULT_LIMIT, db_path=None, vector_path=N
         vector_path = current_app.config["VECTOR_DB_PATH"]
 
     if mode == "keyword":
-        raw_hits = _keyword_hits(class_id, query, k, db_path)
+        raw_hits = _keyword_hits(class_id, query, k, db_path, material_ids)
         return _enrich(raw_hits, class_id, db_path)
 
     if mode == "vector":
-        raw_hits = vectorstore.search(class_id, query, k=k, path=vector_path)
+        raw_hits = vectorstore.search(
+            class_id, query, k=k, path=vector_path, material_ids=material_ids
+        )
         return _enrich(raw_hits, class_id, db_path)
 
     # hybrid: fuse keyword(+substring) with vector hits by RRF. Vector hits
     # must share a literal token with the query, otherwise hash-collision
     # noise (zero-overlap chunks with spurious scores) would pollute results.
-    v_hits = vectorstore.search(class_id, query, k=k, path=vector_path)
+    v_hits = vectorstore.search(
+        class_id, query, k=k, path=vector_path, material_ids=material_ids
+    )
     terms = _query_terms(query)
     if terms:
         v_hits = [h for h in v_hits if _has_token_overlap(h, terms, class_id, db_path)]
     else:
         v_hits = []
-    kw_hits = _keyword_hits(class_id, query, k, db_path)
+    kw_hits = _keyword_hits(class_id, query, k, db_path, material_ids)
     fused = _rrf_fuse(v_hits, kw_hits)
     return _enrich(fused[:k], class_id, db_path)
 
 
 @bp.route("/api/knowledge/search", methods=["GET"])
-@login_required(api=True)
+@login_required
+@api_spec(
+    summary="知识库检索",
+    tags=["知识库"],
+    description=(
+        "class_id 取自登录用户；mode=keyword（FTS+子串）/ vector / hybrid（默认，"
+        "RRF 融合）。返回片段含标题、段号与字符区间，snippet_html 为高亮版。"
+    ),
+    parameters=[
+        {"name": "q", "in": "query", "required": True, "schema": {"type": "string"}},
+        {"name": "mode", "in": "query", "schema": {"type": "string", "enum": ["keyword", "vector", "hybrid"]}},
+    ],
+)
 def api_knowledge_search():
-    """JSON search with mode selection (keyword / vector / hybrid)."""
+    """JSON search with mode selection (keyword / vector / hybrid).
+
+    Snippets are pre-highlighted server-side (jieba terms wrapped in
+    ``<mark>``) and returned as ``snippet_html`` alongside the raw text.
+    """
     query = (request.args.get("q") or "").strip()
     mode = request.args.get("mode", DEFAULT_MODE).strip()
     if mode not in VALID_MODES:
@@ -167,11 +206,15 @@ def api_knowledge_search():
     if not query:
         return {"error": "missing query parameter 'q'", "hits": []}, 400
 
-    hits = do_search(session["class_id"], query, mode)
+    hits = do_search(g.current_user["class_id"], query, mode)
+    rendered = [
+        {**hit, "snippet_html": str(highlight_snippet(hit["snippet"], query))}
+        for hit in hits
+    ]
     if not hits:
         return jsonify(
             {
-                "class_id": session["class_id"],
+                "class_id": g.current_user["class_id"],
                 "query": query,
                 "mode": mode,
                 "message": NO_MATCH_MSG,
@@ -180,37 +223,9 @@ def api_knowledge_search():
         )
     return jsonify(
         {
-            "class_id": session["class_id"],
+            "class_id": g.current_user["class_id"],
             "query": query,
             "mode": mode,
-            "hits": hits,
+            "hits": rendered,
         }
-    )
-
-
-@bp.route("/search", methods=["GET"])
-@login_required(api=False)
-def search_view():
-    """Render the knowledge search page with mode selector and traced hits."""
-    query = (request.args.get("q") or "").strip()
-    mode = request.args.get("mode", DEFAULT_MODE).strip()
-    if mode not in VALID_MODES:
-        mode = DEFAULT_MODE
-
-    if query:
-        hits = do_search(session["class_id"], query, mode)
-    else:
-        hits = []
-
-    rendered = [
-        {**hit, "snippet_html": highlight_snippet(hit["snippet"], query)}
-        for hit in hits
-    ]
-    return render_template(
-        "search.html",
-        q=query,
-        mode=mode,
-        results=rendered,
-        class_id=session["class_id"],
-        no_match_msg=NO_MATCH_MSG if query and not hits else None,
     )

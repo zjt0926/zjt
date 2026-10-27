@@ -7,7 +7,7 @@ meaningful. No model download is required at build/run time.
 
 Class isolation is enforced at query time with a Chroma metadata filter
 (``where={"class_id": ...}``); the class id always comes from the
-viewer's session, never from request data.
+viewer's token, never from request data.
 
 Content tracing: every indexed chunk stores its source ``material_id``,
 ``title`` and ``chunk_index`` as metadata, so every search hit can point
@@ -133,8 +133,13 @@ def search(
     query: str,
     k: int = 5,
     path: Optional[str] = None,
+    material_ids: Optional[list[int]] = None,
 ) -> list[dict]:
     """Search within ONE class only; return ranked hits.
+
+    When ``material_ids`` is given, hits are further restricted to those
+    materials (the agent-scope filter) via a Chroma ``$in`` metadata
+    filter; the class filter still applies.
 
     Each hit: ``{material_id, chunk_index, score}`` — the caller
     enriches with title/char_range/snippet from the DB (per spec:
@@ -144,11 +149,24 @@ def search(
     if not query:
         return []
 
+    where: dict = {"class_id": int(class_id)}
+    if material_ids is not None:
+        ids = [int(m) for m in material_ids]
+        if not ids:
+            return []
+        # Chroma requires the $and operator to combine two conditions.
+        where = {
+            "$and": [
+                {"class_id": int(class_id)},
+                {"material_id": {"$in": ids}},
+            ]
+        }
+
     col = _collection(path)
     result = col.query(
         query_embeddings=[embed_text(query)],
         n_results=k,
-        where={"class_id": int(class_id)},
+        where=where,
         include=["metadatas", "distances"],
     )
     if not result.get("ids") or not result["ids"][0]:

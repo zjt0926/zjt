@@ -115,7 +115,62 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     class_id UNINDEXED,
     chunk_index UNINDEXED
 );
+
+-- Per-class assistant persona prompt, written by the teacher. Read on
+-- every turn, so a saved prompt takes effect from the next conversation
+-- turn. One row per class.
+CREATE TABLE IF NOT EXISTS assistant_prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id INTEGER NOT NULL UNIQUE,
+    body TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (class_id) REFERENCES classes(id)
+);
+
+-- Per-class, per-skill enable switches. Only 'problem_guidance' is
+-- populated this lesson; the other two skills stay reserved.
+CREATE TABLE IF NOT EXISTS skill_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id INTEGER NOT NULL,
+    skill_key TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (class_id, skill_key),
+    FOREIGN KEY (class_id) REFERENCES classes(id)
+);
+
+-- A student's continuous Q&A thread. Owned by one user in one class.
+CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    class_id INTEGER NOT NULL,
+    title TEXT NOT NULL DEFAULT '新会话',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (class_id) REFERENCES classes(id)
+);
+
+-- Individual turns inside a conversation. citations is a JSON list of
+-- {material_id, title, chunk_index, char_start, char_end} (may be empty).
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    citations TEXT,
+    mode TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
 """
+
+DEFAULT_PROMPT = (
+    "你是一名耐心的中学解题助手，用中文与学生交流；语言简洁，"
+    "多鼓励学生自己动手推导。"
+)
+
+# The one skill implemented this lesson; enabled by default.
+GUIDANCE_SKILL_KEY = "problem_guidance"
 
 
 SEED_USERS = [
@@ -204,6 +259,26 @@ def init_db(db_path: str = DB_PATH) -> None:
                 conn.execute(
                     "INSERT INTO skills (class_id, name) VALUES (?, ?)",
                     (cid, f"{class_name}技能占位"),
+                )
+
+            # Assistant persona prompt (one per class; teacher edits later).
+            if not conn.execute(
+                "SELECT 1 FROM assistant_prompts WHERE class_id = ?", (cid,)
+            ).fetchone():
+                conn.execute(
+                    "INSERT INTO assistant_prompts (class_id, body) VALUES (?, ?)",
+                    (cid, DEFAULT_PROMPT),
+                )
+
+            # The problem-guidance skill, enabled by default.
+            if not conn.execute(
+                "SELECT 1 FROM skill_configs WHERE class_id = ? AND skill_key = ?",
+                (cid, GUIDANCE_SKILL_KEY),
+            ).fetchone():
+                conn.execute(
+                    "INSERT INTO skill_configs (class_id, skill_key, enabled) "
+                    "VALUES (?, ?, 1)",
+                    (cid, GUIDANCE_SKILL_KEY),
                 )
 
         conn.commit()

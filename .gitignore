@@ -14,7 +14,15 @@ data/*
 uploads/*
 !uploads/.gitkeep
 
+# apitest: generated report + ephemeral test databases are not committed.
+apitest/report.html
+data/test_*.db
+data/chroma_*/
+
 # Editor / OS
 .vscode/
 .idea/
 .DS_Store
+
+# Local tooling cache
+.trae-html-share-packages/

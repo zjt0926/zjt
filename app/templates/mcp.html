@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}MCP 服务器管理 · CampusClaw{% endblock %}
+{% block content %}
+<div class="pku-card">
+  <h2>MCP 服务器管理</h2>
+  <p style="color:#666;font-size:14px;margin-bottom:16px;">
+    登记自建 MCP 服务器，连接后自动发现工具，供技能绑定并在对话中调用。
+    Bearer 令牌仅保存在服务端，不会回显到页面。
+  </p>
+
+  <div id="mcp-alert" class="pku-alert" style="display:none;"></div>
+
+  <h3 style="font-size:15px;margin:20px 0 12px;color:#555;">登记新服务器</h3>
+  <div class="pku-form-group">
+    <label>服务器名称（用于 tool@服务器名 引用）</label>
+    <input type="text" id="mcp-name" placeholder="campus-tools">
+  </div>
+  <div class="pku-form-group">
+    <label>Base URL</label>
+    <input type="text" id="mcp-url" placeholder="http://mcp-server:8090">
+  </div>
+  <div class="pku-form-group">
+    <label>Bearer 令牌（与 .env 中 MCP_AUTH_TOKEN 的值完全一致，48 位十六进制串）</label>
+    <input type="password" id="mcp-token" placeholder="粘贴令牌的值，不要填变量名 MCP_AUTH_TOKEN">
+  </div>
+  <button class="pku-btn" id="mcp-register">登记</button>
+</div>
+
+<div class="pku-card">
+  <h2>已登记服务器</h2>
+  <table class="pku-table" id="mcp-servers-table">
+    <thead>
+      <tr>
+        <th>名称</th><th>Base URL</th><th>状态</th><th>工具</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody><tr><td colspan="5" class="pku-empty">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="pku-card">
+  <h2>MCP 工具调用审计</h2>
+  <table class="pku-table" id="mcp-audit-table">
+    <thead>
+      <tr>
+        <th>工具@服务器</th><th>状态</th><th>用户</th><th>时间</th><th>说明</th>
+      </tr>
+    </thead>
+    <tbody><tr><td colspan="5" class="pku-empty">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  if (!CC.requireAuth()) return;
+  var user = CC.getUser();
+  var isTeacher = user && user.role === 'teacher';
+
+  function showAlert(msg, ok) {
+    var el = document.getElementById('mcp-alert');
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.background = ok ? '#f0f9eb' : '#fef0f0';
+    el.style.color = ok ? '#2e7d32' : '#94070a';
+    el.style.borderColor = ok ? '#c4e1b3' : '#fbc4c4';
+  }
+
+  function statusBadge(connected) {
+    return connected
+      ? '<span class="pku-badge" style="background:#e8f5e9;color:#2e7d32;">已连接</span>'
+      : '<span class="pku-badge" style="background:#fff3e0;color:#e65100;">未连接</span>';
+  }
+
+  function loadServers() {
+    CC.authFetch('/api/mcp/servers').then(function (r) { return r.json(); })
+      .then(function (data) {
+        var tbody = document.querySelector('#mcp-servers-table tbody');
+        if (!data.servers.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="pku-empty">暂无服务器</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.servers.map(function (s) {
+          var actions = isTeacher
+            ? (s.connected
+                ? '<button class="pku-btn pku-btn-outline" data-act="disconnect" data-id="' + s.id + '">断开</button>'
+                : '<button class="pku-btn pku-btn-outline" data-act="connect" data-id="' + s.id + '">连接</button>')
+              + ' <button class="pku-btn pku-btn-outline" data-act="tools" data-id="' + s.id + '">工具</button>'
+              + ' <button class="pku-btn pku-btn-outline" data-act="delete" data-id="' + s.id + '">删除</button>'
+            : '<button class="pku-btn pku-btn-outline" data-act="tools" data-id="' + s.id + '">工具</button>';
+          return '<tr>'
+            + '<td>' + s.name + '</td>'
+            + '<td>' + s.base_url + '</td>'
+            + '<td>' + statusBadge(s.connected) + '</td>'
+            + '<td id="tools-' + s.id + '">' + (s.connected ? '已缓存' : '-') + '</td>'
+            + '<td>' + actions + '</td>'
+            + '</tr>';
+        }).join('');
+      });
+  }
+
+  function loadAudit() {
+    if (!isTeacher) {
+      document.querySelector('#mcp-audit-table tbody').innerHTML =
+        '<tr><td colspan="5" class="pku-empty">仅教师可查看审计</td></tr>';
+      return;
+    }
+    CC.authFetch('/api/mcp/audit').then(function (r) { return r.json(); })
+      .then(function (data) {
+        var tbody = document.querySelector('#mcp-audit-table tbody');
+        if (!data.audit.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="pku-empty">暂无调用记录</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.audit.map(function (a) {
+          var color = a.status === 'ok' ? '#2e7d32' : (a.status === 'denied' ? '#e65100' : '#94070a');
+          var note = a.error_message || (a.response_text ? a.response_text.slice(0, 40) : '');
+          return '<tr>'
+            + '<td>' + a.tool_ref + '</td>'
+            + '<td style="color:' + color + ';font-weight:600;">' + a.status + '</td>'
+            + '<td>用户#' + a.user_id + '</td>'
+            + '<td>' + a.created_at + '</td>'
+            + '<td style="font-size:12px;color:#666;">' + note + '</td>'
+            + '</tr>';
+        }).join('');
+      });
+  }
+
+  document.getElementById('mcp-register').addEventListener('click', function () {
+    if (!isTeacher) { showAlert('仅教师可登记 MCP 服务器', false); return; }
+    var body = {
+      name: document.getElementById('mcp-name').value.trim(),
+      base_url: document.getElementById('mcp-url').value.trim(),
+      auth_token: document.getElementById('mcp-token').value.trim(),
+    };
+    if (!body.name || !body.base_url || !body.auth_token) {
+      showAlert('名称、Base URL 和令牌均不能为空', false); return;
+    }
+    CC.authFetch('/api/mcp/servers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || '登记失败'); });
+      return r.json();
+    }).then(function () {
+      showAlert('登记成功，请点击「连接」发现工具', true);
+      document.getElementById('mcp-name').value = '';
+      document.getElementById('mcp-url').value = '';
+      document.getElementById('mcp-token').value = '';
+      loadServers();
+    }).catch(function (e) { showAlert(e.message, false); });
+  });
+
+  document.querySelector('#mcp-servers-table tbody').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    var id = btn.getAttribute('data-id');
+    var act = btn.getAttribute('data-act');
+    if (act === 'connect') {
+      CC.authFetch('/api/mcp/servers/' + id + '/connect', { method: 'POST' })
+        .then(function (r) {
+          if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || '连接失败'); });
+          return r.json();
+        }).then(function (data) {
+          var names = (data.tools || []).map(function (t) { return t.name; }).join(', ');
+          document.getElementById('tools-' + id).textContent = names || '-';
+          showAlert('连接成功，已发现工具：' + (names || '无'), true);
+          loadServers();
+        }).catch(function (e) { showAlert(e.message, false); });
+    } else if (act === 'disconnect') {
+      CC.authFetch('/api/mcp/servers/' + id + '/disconnect', { method: 'POST' })
+        .then(function () { showAlert('已断开，工具缓存已清空', true); loadServers(); })
+        .catch(function (e) { showAlert(e.message, false); });
+    } else if (act === 'delete') {
+      if (!confirm('确认删除该服务器？')) return;
+      CC.authFetch('/api/mcp/servers/' + id, { method: 'DELETE' })
+        .then(function () { showAlert('已删除', true); loadServers(); })
+        .catch(function (e) { showAlert(e.message, false); });
+    } else if (act === 'tools') {
+      CC.authFetch('/api/mcp/servers/' + id + '/tools').then(function (r) { return r.json(); })
+        .then(function (data) {
+          var names = (data.tools || []).map(function (t) { return t.name + '（' + (t.description || '') + '）'; }).join('；');
+          showAlert('工具列表：' + (names || '无'), true);
+        });
+    }
+  });
+
+  loadServers();
+  loadAudit();
+})();
+</script>
+{% endblock %}

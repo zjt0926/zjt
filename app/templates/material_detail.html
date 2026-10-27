@@ -1,33 +1,86 @@
 {% extends "base.html" %}
-{% block title %}{{ material.title }} · CampusClaw{% endblock %}
+{% block title %}材料详情 · CampusClaw{% endblock %}
 {% block content %}
-<div class="pku-card">
-  <h2>{{ material.title }}</h2>
-  <p style="font-size:14px;color:var(--pku-text-light);margin-bottom:20px">
-    材料ID：{{ material.id }}
-  </p>
-  {% if material.file_path %}
-    <div style="margin-bottom:20px">
-      <a href="/materials/{{ material.id }}/download" class="pku-btn">下载文件</a>
-    </div>
-  {% else %}
-    <div class="pku-alert" style="margin-bottom:20px">该材料为种子数据，无可下载文件</div>
-  {% endif %}
-
-  {% if body %}
-    <h3 style="font-size:16px;margin-bottom:10px">材料内容</h3>
-    <pre style="font-size:14px;line-height:1.8;white-space:pre-wrap;word-break:break-word;background:#fafafa;border:1px solid var(--pku-gray-border);border-left:3px solid var(--pku-gold);border-radius:0 4px 4px 0;padding:14px 18px;margin-bottom:8px">{{ body }}</pre>
-    {% if truncated %}
-      <p style="font-size:13px;color:var(--pku-text-light);margin-bottom:16px">
-        内容过长，仅显示前 {{ 100000 }} 个字符，完整内容请下载原文件查看。
-      </p>
-    {% endif %}
-  {% else %}
-    <div class="pku-alert" style="margin-bottom:20px">该材料暂无可预览内容</div>
-  {% endif %}
-
-  <div class="pku-link-row">
-    <a href="/materials">返回列表</a>
-  </div>
+<div class="pku-card" id="cc-detail">
+  <div class="pku-empty">加载中…</div>
 </div>
+
+<script>
+  (function () {
+    if (!CC.requireAuth()) { return; }
+
+    const MATERIAL_ID = {{ material_id }};
+    const el = document.getElementById('cc-detail');
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function downloadMaterial() {
+      CC.authFetch('/materials/' + MATERIAL_ID + '/download')
+        .then(function (resp) {
+          if (!resp.ok) { throw new Error('download failed'); }
+          return resp.blob().then(function (blob) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'material_' + MATERIAL_ID;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          });
+        })
+        .catch(function () {
+          el.insertAdjacentHTML('afterbegin',
+            '<div class="pku-alert" style="margin-bottom:16px">下载失败，请重试</div>');
+        });
+    }
+
+    function render(material, body, truncated) {
+      let html = '<h2>' + escapeHtml(material.title) + '</h2>' +
+        '<p style="font-size:14px;color:var(--pku-text-light);margin-bottom:20px">' +
+        '材料ID：' + material.id + '</p>';
+
+      if (material.file_path) {
+        html += '<div style="margin-bottom:20px">' +
+          '<button type="button" id="cc-download" class="pku-btn">下载文件</button></div>';
+      } else {
+        html += '<div class="pku-alert" style="margin-bottom:20px">该材料为种子数据，无可下载文件</div>';
+      }
+
+      if (body) {
+        html += '<h3 style="font-size:16px;margin-bottom:10px">材料内容</h3>' +
+          '<pre style="font-size:14px;line-height:1.8;white-space:pre-wrap;word-break:break-word;' +
+          'background:#fafafa;border:1px solid var(--pku-gray-border);border-left:3px solid var(--pku-gold);' +
+          'border-radius:0 4px 4px 0;padding:14px 18px;margin-bottom:8px">' + escapeHtml(body) + '</pre>';
+        if (truncated) {
+          html += '<p style="font-size:13px;color:var(--pku-text-light);margin-bottom:16px">' +
+            '内容过长，仅显示前 100000 个字符，完整内容请下载原文件查看。</p>';
+        }
+      } else {
+        html += '<div class="pku-alert" style="margin-bottom:20px">该材料暂无可预览内容</div>';
+      }
+
+      html += '<div class="pku-link-row"><a href="/materials">返回列表</a></div>';
+      el.innerHTML = html;
+
+      const btn = document.getElementById('cc-download');
+      if (btn) { btn.addEventListener('click', downloadMaterial); }
+    }
+
+    CC.authFetch('/api/materials/' + MATERIAL_ID)
+      .then(function (resp) {
+        if (!resp.ok) { throw new Error('not found'); }
+        return resp.json();
+      })
+      .then(function (data) { render(data.material, data.body, data.truncated); })
+      .catch(function () {
+        el.innerHTML = '<div class="pku-empty">材料不存在或无权访问</div>' +
+          '<div class="pku-link-row"><a href="/materials">返回列表</a></div>';
+      });
+  })();
+</script>
 {% endblock %}

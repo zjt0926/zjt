@@ -1,0 +1,847 @@
+{% extends "base.html" %}
+{% block title %}解题助手 · CampusClaw{% endblock %}
+{% block content %}
+
+<style>
+  .cc-chat-wrap { display: flex; flex-direction: column; }
+  .cc-chat-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .cc-chat-top select {
+    flex: 1; min-width: 160px; padding: 8px 10px; border: 1px solid var(--pku-gray-border);
+    border-radius: 4px; font-size: 14px; background: #fff;
+  }
+  .cc-agent-tag {
+    display: inline-block; font-size: 12px; font-weight: 600; color: #7a5c00;
+    background: #fffbe6; border: 1px solid #ffe58f; border-radius: 10px; padding: 3px 10px;
+    white-space: nowrap;
+  }
+  .cc-new-panel {
+    display: none; gap: 10px; align-items: center; padding: 12px;
+    border: 1px dashed var(--pku-gray-border); border-radius: 6px; margin-bottom: 12px;
+    background: #fcfcfc; flex-wrap: wrap;
+  }
+  .cc-new-panel.open { display: flex; }
+  .cc-new-panel select { flex: 1; min-width: 200px; }
+  .cc-chat-box {
+    height: 430px; overflow-y: auto; padding: 18px;
+    background: #fafafa; border: 1px solid var(--pku-gray-border);
+    border-radius: 6px;
+  }
+  .cc-bubble { max-width: 78%; margin-bottom: 14px; clear: both; }
+  .cc-bubble .cc-bubble-inner {
+    padding: 10px 14px; border-radius: 10px; font-size: 14px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .cc-bubble-user { float: right; }
+  .cc-bubble-user .cc-bubble-inner {
+    background: var(--pku-crimson); color: #fff; border-bottom-right-radius: 2px;
+  }
+  .cc-bubble-assistant { float: left; width: 88%; max-width: 88%; }
+  .cc-bubble-assistant .cc-bubble-inner {
+    background: #fff; border: 1px solid var(--pku-gray-border);
+    border-bottom-left-radius: 2px;
+  }
+  .cc-mode-tag {
+    display: inline-block; font-size: 12px; padding: 1px 8px;
+    border-radius: 10px; margin-bottom: 6px; font-weight: 600;
+  }
+  .cc-mode-guide { background: #fff7e6; color: #b26a00; border: 1px solid #ffd591; }
+  .cc-mode-direct { background: #e6f4ff; color: #0958d9; border: 1px solid #91caff; }
+  .cc-cites {
+    margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--pku-gray-border);
+    font-size: 12px; color: var(--pku-text-light);
+  }
+  .cc-cites a { color: var(--pku-crimson); text-decoration: none; }
+  .cc-cites a:hover { text-decoration: underline; }
+  .cc-cites .cc-cite-empty { color: #999; }
+  .cc-chat-input { display: flex; gap: 10px; margin-top: 14px; }
+  .cc-chat-input textarea {
+    flex: 1; padding: 10px 12px; border: 1px solid var(--pku-gray-border);
+    border-radius: 4px; font-size: 14px; resize: none; height: 60px;
+    font-family: inherit;
+  }
+  .cc-chat-input textarea:focus {
+    outline: none; border-color: var(--pku-crimson);
+    box-shadow: 0 0 0 3px rgba(148,7,10,0.1);
+  }
+  /* 管理 */
+  .cc-section { margin-bottom: 26px; }
+  .cc-section h3 { font-size: 15px; margin-bottom: 10px; color: var(--pku-text); }
+  .cc-hint { font-size: 13px; color: var(--pku-text-light); margin: 4px 0 10px; }
+  .cc-mgmt-table td { vertical-align: top; }
+  .cc-bind-list { font-size: 12px; color: var(--pku-text-light); }
+  .cc-state-on { color: #2e7d32; font-size: 12px; }
+  .cc-state-off { color: #999; font-size: 12px; }
+  .cc-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cc-form-grid .full { grid-column: 1 / -1; }
+  .cc-check-box {
+    border: 1px solid var(--pku-gray-border); border-radius: 6px; padding: 10px;
+    max-height: 150px; overflow-y: auto; font-size: 13px;
+  }
+  .cc-check-box label { display: block; font-weight: normal; color: var(--pku-text); }
+  .cc-ta {
+    width: 100%; min-height: 90px; padding: 10px 12px; font-size: 14px;
+    border: 1px solid var(--pku-gray-border); border-radius: 4px; resize: vertical;
+    font-family: inherit;
+  }
+  .cc-ta:focus { outline: none; border-color: var(--pku-crimson); }
+  .cc-input {
+    width: 100%; padding: 9px 12px; font-size: 14px;
+    border: 1px solid var(--pku-gray-border); border-radius: 4px; font-family: inherit;
+  }
+  .cc-btn-sm { padding: 4px 12px; font-size: 13px; }
+</style>
+
+<div id="cc-messages"></div>
+
+<!-- Chat -->
+<div class="pku-card cc-chat-wrap">
+  <h2>解题助手</h2>
+  <div class="cc-chat-top">
+    <select id="cc-conv-select"></select>
+    <span id="cc-agent-tag" class="cc-agent-tag" style="display:none"></span>
+    <button type="button" class="pku-btn pku-btn-outline" id="cc-new-conv">新会话</button>
+  </div>
+  <div class="cc-new-panel" id="cc-new-panel">
+    <span style="font-size:13px;color:var(--pku-text-light)">选定智能体：</span>
+    <select id="cc-agent-select"></select>
+    <button type="button" class="pku-btn" id="cc-create-conv">创建会话</button>
+    <button type="button" class="pku-btn pku-btn-outline" id="cc-cancel-conv">取消</button>
+  </div>
+  <div class="cc-chat-box" id="cc-chat-box">
+    <div class="pku-empty">加载中…</div>
+  </div>
+  <div class="cc-chat-input">
+    <textarea id="cc-question" placeholder="输入你的题目或追问，Enter 发送，Shift+Enter 换行"></textarea>
+    <button type="button" class="pku-btn" id="cc-send">发送</button>
+  </div>
+</div>
+
+<!-- Teacher-only management -->
+<div class="pku-card" id="cc-config-card" style="display:none">
+  <h2>智能体管理（仅教师）</h2>
+
+  <div class="cc-section">
+    <div class="cc-hint">每个智能体 = 角色提示词 + 绑定技能（命中才生效）+ 绑定材料（检索范围）。班内名称唯一。</div>
+    <table class="pku-table cc-mgmt-table" id="cc-agent-table">
+      <thead><tr><th>名称</th><th>状态</th><th>绑定技能</th><th>绑定材料</th><th style="width:150px">操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" class="pku-btn" id="cc-show-agent-form" style="margin-top:10px">新建智能体</button>
+  </div>
+
+  <div class="cc-section" id="cc-agent-form" style="display:none">
+    <h3 id="cc-agent-form-title">新建智能体</h3>
+    <div class="cc-form-grid">
+      <div>
+        <label>名称（班内唯一）</label>
+        <input type="text" id="cc-agent-name" class="cc-input">
+      </div>
+      <div>
+        <label>启用状态</label>
+        <select id="cc-agent-enabled" class="cc-input">
+          <option value="1">启用</option>
+          <option value="0">停用</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>从提示词模板填充（可选，选择后覆盖下方角色提示词）</label>
+        <select id="cc-agent-template" class="cc-input">
+          <option value="">（不使用模板）</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>角色提示词：规定这个助手是谁</label>
+        <textarea id="cc-agent-prompt" class="cc-ta"></textarea>
+      </div>
+      <div>
+        <label>绑定技能（命中适用条件才路由，至多命中一个）</label>
+        <div class="cc-check-box" id="cc-skill-checks"></div>
+      </div>
+      <div>
+        <label>绑定材料（检索只在这些材料内进行）</label>
+        <div class="cc-check-box" id="cc-material-checks"></div>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <button type="button" class="pku-btn" id="cc-save-agent">保存</button>
+      <button type="button" class="pku-btn pku-btn-outline" id="cc-cancel-agent">取消</button>
+    </div>
+  </div>
+
+  <div class="cc-section">
+    <h3>提示词模板</h3>
+    <div class="cc-hint">模板是新建智能体的起点：选中后正文复制进智能体提示词；模板后续修改不影响已创建的智能体。</div>
+    <table class="pku-table cc-mgmt-table" id="cc-tpl-table">
+      <thead><tr><th>名称</th><th>简介</th><th>正文预览</th><th style="width:90px">操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" class="pku-btn pku-btn-outline" id="cc-show-tpl-form" style="margin-top:10px">新建模板</button>
+  </div>
+
+  <div class="cc-section" id="cc-tpl-form" style="display:none">
+    <h3>新建提示词模板</h3>
+    <div class="cc-form-grid">
+      <div>
+        <label>名称（班内唯一）</label>
+        <input type="text" id="cc-tpl-name" class="cc-input">
+      </div>
+      <div>
+        <label>简介</label>
+        <input type="text" id="cc-tpl-desc" class="cc-input">
+      </div>
+      <div class="full">
+        <label>模板正文（提示词）</label>
+        <textarea id="cc-tpl-body" class="cc-ta"></textarea>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <button type="button" class="pku-btn" id="cc-save-tpl">保存模板</button>
+      <button type="button" class="pku-btn pku-btn-outline" id="cc-cancel-tpl">取消</button>
+    </div>
+  </div>
+
+  <div class="cc-section">
+    <h3>技能</h3>
+    <div class="cc-hint">技能说明与适用条件都来自教师编写或上传的文件，属于数据；仅当智能体绑定了该技能且其触发词出现在问题中才会命中。</div>
+    <table class="pku-table cc-mgmt-table" id="cc-skill-table">
+      <thead><tr><th>名称</th><th>适用条件（触发词）</th><th>状态</th><th style="width:110px">操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" class="pku-btn pku-btn-outline" id="cc-show-skill-form" style="margin-top:10px">新建技能</button>
+  </div>
+
+  <div class="cc-section" id="cc-skill-form" style="display:none">
+    <h3>新建技能</h3>
+    <div class="cc-form-grid">
+      <div>
+        <label>名称（班内唯一）</label>
+        <input type="text" id="cc-skill-name" class="cc-input">
+      </div>
+      <div>
+        <label>适用条件（触发词，逗号分隔；为空则永不自动命中）</label>
+        <input type="text" id="cc-skill-triggers" class="cc-input" placeholder="错在哪,哪一步,帮我看看">
+      </div>
+      <div class="full">
+        <label>技能说明（进入系统消息；也可直接上传 .txt/.md 文件代替）</label>
+        <textarea id="cc-skill-instruction" class="cc-ta"></textarea>
+        <div style="margin-top:6px;font-size:13px">
+          <input type="file" id="cc-skill-file" accept=".txt,.md">
+          <span class="cc-hint">选择文件后，文件内容将作为技能说明</span>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <button type="button" class="pku-btn" id="cc-save-skill">保存技能</button>
+      <button type="button" class="pku-btn pku-btn-outline" id="cc-cancel-skill">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  if (!CC.requireAuth()) { return; }
+
+  const user = CC.getUser() || {};
+  const isTeacher = user.role === 'teacher';
+  const chatBox = document.getElementById('cc-chat-box');
+  const convSelect = document.getElementById('cc-conv-select');
+  const questionEl = document.getElementById('cc-question');
+  const msgBox = document.getElementById('cc-messages');
+  const agentTag = document.getElementById('cc-agent-tag');
+
+  let conversations = [];
+  let currentConvId = null;
+  let currentAgentName = null;
+  let agents = [];
+  let streaming = false;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function showMessage(text, ok) {
+    msgBox.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'pku-alert';
+    div.style.cssText = ok
+      ? 'background:#f0f9ff;color:#1565c0;border-color:#b3d8ff;font-size:14px'
+      : 'background:#fef0f0;color:#94070a;border-color:#fbc4c4;font-size:14px';
+    div.textContent = text;
+    msgBox.appendChild(div);
+  }
+
+  // citations: [{n, material_id, title, chunk_index, char_start, char_end}]
+  function citationsHtml(citations) {
+    if (!citations || !citations.length) {
+      return '<div class="cc-cites"><span class="cc-cite-empty">本次未引用本班资料</span></div>';
+    }
+    const items = citations.map(function (c) {
+      return '[' + c.n + '] <a href="/materials/' + c.material_id + '">《' + escapeHtml(c.title) +
+        '》第 ' + (c.chunk_index + 1) + ' 段（第 ' + c.char_start +
+        '–' + c.char_end + ' 字）</a>';
+    }).join('<br>');
+    return '<div class="cc-cites">出处：<br>' + items + '</div>';
+  }
+
+  function modeTagHtml(skillName) {
+    if (skillName) {
+      return '<span class="cc-mode-tag cc-mode-guide">技能 · ' + escapeHtml(skillName) + '</span>';
+    }
+    return '<span class="cc-mode-tag cc-mode-direct">直接解答</span>';
+  }
+
+  function bubbleHtml(kind, opts) {
+    if (kind === 'user') {
+      return '<div class="cc-bubble cc-bubble-user"><div class="cc-bubble-inner">' +
+        escapeHtml(opts.content) + '</div></div>';
+    }
+    return '<div class="cc-bubble cc-bubble-assistant"><div class="cc-bubble-inner">' +
+      modeTagHtml(opts.skillName) + '<div>' +
+      escapeHtml(opts.content) + '</div>' +
+      citationsHtml(opts.citations) +
+      '</div></div><div style="clear:both"></div>';
+  }
+
+  function scrollBottom() { chatBox.scrollTop = chatBox.scrollHeight; }
+
+  function setAgentTag(name) {
+    currentAgentName = name;
+    if (name) {
+      agentTag.textContent = '智能体：' + name;
+      agentTag.style.display = '';
+    } else {
+      agentTag.style.display = 'none';
+    }
+  }
+
+  // ---- conversations ----
+
+  function renderConvOptions() {
+    convSelect.innerHTML = '';
+    conversations.forEach(function (c) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = (c.title || ('会话 ' + c.id)) +
+        (c.agent_name ? '（' + c.agent_name + '）' : '');
+      if (c.id === currentConvId) { opt.selected = true; }
+      convSelect.appendChild(opt);
+    });
+  }
+
+  function loadConversations(selectId) {
+    return CC.authFetch('/api/conversations')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        conversations = data.conversations || [];
+        if (!conversations.length) { openNewPanel(); return null; }
+        currentConvId = selectId || conversations[0].id;
+        renderConvOptions();
+        return loadMessages();
+      });
+  }
+
+  function openNewPanel() {
+    return loadAgents().then(function () {
+      document.getElementById('cc-new-panel').classList.add('open');
+      const sel = document.getElementById('cc-agent-select');
+      if (!sel.options.length) {
+        sel.innerHTML = '<option value="">（本班暂无可用智能体）</option>';
+      }
+    });
+  }
+
+  function closeNewPanel() {
+    document.getElementById('cc-new-panel').classList.remove('open');
+  }
+
+  function createConversation(agentId) {
+    return CC.authFetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: parseInt(agentId, 10) }),
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (r) {
+      if (!r.ok) { showMessage(r.d.error || '创建失败', false); return; }
+      conversations.unshift(r.d.conversation);
+      currentConvId = r.d.conversation.id;
+      setAgentTag(r.d.conversation.agent_name);
+      renderConvOptions();
+      closeNewPanel();
+      chatBox.innerHTML = '<div class="pku-empty">把你的题目发给我吧</div>';
+      showMessage('已创建会话（智能体：' + r.d.conversation.agent_name + '），会话期间不可更换', true);
+    }).catch(function () { showMessage('创建失败，请重试', false); });
+  }
+
+  function loadMessages() {
+    return CC.authFetch('/api/conversations/' + currentConvId + '/messages')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        setAgentTag(data.conversation && data.conversation.agent_name);
+        chatBox.innerHTML = '';
+        (data.messages || []).forEach(function (m) {
+          let cites = [];
+          if (m.citations) {
+            try { cites = JSON.parse(m.citations); } catch (e) { cites = []; }
+          }
+          const skillName = m.mode === 'direct' ? null : '解题引导';
+          const html = m.role === 'user'
+            ? bubbleHtml('user', { content: m.content })
+            : bubbleHtml('assistant', { content: m.content, citations: cites, skillName: skillName });
+          chatBox.insertAdjacentHTML('beforeend', html);
+        });
+        if (!data.messages || !data.messages.length) {
+          chatBox.innerHTML = '<div class="pku-empty">把你的题目发给我吧</div>';
+        }
+        scrollBottom();
+      });
+  }
+
+  convSelect.addEventListener('change', function () {
+    if (streaming) { return; }
+    currentConvId = parseInt(convSelect.value, 10);
+    loadMessages();
+  });
+
+  document.getElementById('cc-new-conv').addEventListener('click', function () {
+    if (streaming) { return; }
+    openNewPanel();
+  });
+  document.getElementById('cc-cancel-conv').addEventListener('click', closeNewPanel);
+  document.getElementById('cc-create-conv').addEventListener('click', function () {
+    const v = document.getElementById('cc-agent-select').value;
+    if (!v) { showMessage('请先选择智能体', false); return; }
+    createConversation(v);
+  });
+
+  // ---- SSE ask (POST fetch + streaming reader) ----
+
+  function parseSseChunks(buffer) {
+    const parts = buffer.split('\n\n');
+    const leftover = parts.pop();
+    const events = parts.map(function (block) {
+      let event = 'message';
+      let data = '';
+      block.split('\n').forEach(function (line) {
+        if (line.indexOf('event:') === 0) { event = line.slice(6).trim(); }
+        else if (line.indexOf('data:') === 0) { data += line.slice(5).trim(); }
+      });
+      try { data = JSON.parse(data); } catch (e) { data = {}; }
+      return { event: event, data: data };
+    });
+    return [events, leftover];
+  }
+
+  function ask(question) {
+    streaming = true;
+    if (chatBox.querySelector('.pku-empty')) { chatBox.innerHTML = ''; }
+    chatBox.insertAdjacentHTML('beforeend', bubbleHtml('user', { content: question }));
+    chatBox.insertAdjacentHTML(
+      'beforeend',
+      '<div class="cc-bubble cc-bubble-assistant" id="cc-pending">' +
+      '<div class="cc-bubble-inner"><span class="cc-mode-tag cc-mode-direct">…</span>' +
+      '<div class="cc-answer-text"></div><div class="cc-cites"></div></div></div>' +
+      '<div style="clear:both"></div>'
+    );
+    scrollBottom();
+
+    const pending = document.getElementById('cc-pending');
+    const textSlot = pending.querySelector('.cc-answer-text');
+    const citeSlot = pending.querySelector('.cc-cites');
+    const tagSlot = pending.querySelector('.cc-mode-tag');
+
+    fetch('/api/conversations/' + currentConvId + '/ask', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + CC.getToken(),
+      },
+      body: JSON.stringify({ question: question }),
+    }).then(function (resp) {
+      if (!resp.ok) {
+        return resp.json().then(function (d) { throw new Error(d.error || '请求失败'); });
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      function pump() {
+        return reader.read().then(function (chunk) {
+          if (chunk.done) { streaming = false; return; }
+          buffer += decoder.decode(chunk.value, { stream: true });
+          const parsed = parseSseChunks(buffer);
+          const events = parsed[0];
+          buffer = parsed[1];
+          events.forEach(function (ev) {
+            if (ev.event === 'meta') {
+              // 引用列表随第一个事件先行到达。
+              tagSlot.outerHTML = modeTagHtml(ev.data.skill && ev.data.skill.name);
+              const wrap = document.createElement('div');
+              wrap.innerHTML = citationsHtml(ev.data.citations);
+              citeSlot.replaceWith(wrap.firstChild);
+            } else if (ev.event === 'delta') {
+              textSlot.appendChild(document.createTextNode(ev.data.text));
+              scrollBottom();
+            } else if (ev.event === 'done') {
+              pending.removeAttribute('id');
+            } else if (ev.event === 'error') {
+              const msg = ev.data.error || '输出中断';
+              tagSlot.className = 'cc-mode-tag cc-mode-direct';
+              tagSlot.textContent = '出错了';
+              textSlot.textContent = '（' + msg + '）';
+              pending.removeAttribute('id');
+            }
+          });
+          return pump();
+        });
+      }
+      return pump();
+    }).then(function () {
+      streaming = false;
+      return loadConversations(currentConvId);
+    }).catch(function (err) {
+      streaming = false;
+      const p = document.getElementById('cc-pending');
+      if (p) { p.remove(); }
+      showMessage(err.message || '请求失败，请重试', false);
+    });
+  }
+
+  function send() {
+    if (streaming) { return; }
+    const q = questionEl.value.trim();
+    if (!q) { return; }
+    if (!currentConvId) { showMessage('请先新建会话并选定智能体', false); return; }
+    questionEl.value = '';
+    ask(q);
+  }
+
+  document.getElementById('cc-send').addEventListener('click', send);
+  questionEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  // ---- teacher management ----
+
+  let skillsCache = [];
+  let materialsCache = [];
+  let templatesCache = [];
+  let editingAgentId = null;
+
+  function loadAgents() {
+    return CC.authFetch('/api/agents')
+      .then(function (r) { return r.json(); })
+      .then(function (data) { agents = data.agents || []; return agents; });
+  }
+
+  function loadSkills() {
+    return CC.authFetch('/api/skills')
+      .then(function (r) { return r.json(); })
+      .then(function (data) { skillsCache = data.skills || []; return skillsCache; });
+  }
+
+  function loadMaterials() {
+    return CC.authFetch('/api/materials')
+      .then(function (r) { return r.json(); })
+      .then(function (data) { materialsCache = data.materials || []; return materialsCache; });
+  }
+
+  function loadTemplates() {
+    return CC.authFetch('/api/prompt-templates')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        templatesCache = data.templates || [];
+        renderTemplateTable();
+        renderTemplateOptions();
+        return templatesCache;
+      });
+  }
+
+  function renderTemplateTable() {
+    const tbody = document.querySelector('#cc-tpl-table tbody');
+    tbody.innerHTML = '';
+    templatesCache.forEach(function (t) {
+      const tr = document.createElement('tr');
+      const preview = (t.body || '').slice(0, 40) + ((t.body || '').length > 40 ? '…' : '');
+      tr.innerHTML =
+        '<td>' + escapeHtml(t.name) + '</td>' +
+        '<td>' + escapeHtml(t.description || '') + '</td>' +
+        '<td>' + escapeHtml(preview) + '</td>' +
+        '<td><button class="pku-btn pku-btn-outline cc-btn-sm" data-tpl-del="' + t.id + '">删除</button></td>';
+      tbody.appendChild(tr);
+    });
+    if (!templatesCache.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="cc-bind-list">（暂无模板）</td></tr>';
+    }
+  }
+
+  function renderTemplateOptions() {
+    const sel = document.getElementById('cc-agent-template');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">（不使用模板）</option>';
+    templatesCache.forEach(function (t) {
+      const opt = document.createElement('option');
+      opt.value = String(t.id);
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+    sel.value = current;
+  }
+
+  function renderAgentTable() {
+    const tbody = document.querySelector('#cc-agent-table tbody');
+    tbody.innerHTML = '';
+    agents.forEach(function (a) {
+      const tr = document.createElement('tr');
+      const binds = (a.skills || []).map(function (s) { return escapeHtml(s.name); }).join('、')
+        || '<span class="cc-bind-list">无</span>';
+      const mats = (a.materials || []).map(function (m) { return escapeHtml(m.title); }).join('、')
+        || '<span class="cc-bind-list">无</span>';
+      tr.innerHTML =
+        '<td>' + escapeHtml(a.name) + '</td>' +
+        '<td><span class="' + (a.enabled ? 'cc-state-on' : 'cc-state-off') + '">' +
+        (a.enabled ? '已启用' : '已停用') + '</span></td>' +
+        '<td>' + binds + '</td>' +
+        '<td>' + mats + '</td>' +
+        '<td><button class="pku-btn pku-btn-outline cc-btn-sm" data-act="edit" data-id="' + a.id + '">编辑</button> ' +
+        '<button class="pku-btn pku-btn-outline cc-btn-sm" data-act="toggle" data-id="' + a.id + '">' +
+        (a.enabled ? '停用' : '启用') + '</button></td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderSkillTable() {
+    const tbody = document.querySelector('#cc-skill-table tbody');
+    tbody.innerHTML = '';
+    skillsCache.forEach(function (s) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + escapeHtml(s.name) + '</td>' +
+        '<td>' + escapeHtml(s.triggers || '（无）') + '</td>' +
+        '<td><span class="' + (s.enabled ? 'cc-state-on' : 'cc-state-off') + '">' +
+        (s.enabled ? '已启用' : '已停用') + '</span></td>' +
+        '<td><button class="pku-btn pku-btn-outline cc-btn-sm" data-skill-toggle="' + s.id + '">' +
+        (s.enabled ? '停用' : '启用') + '</button></td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderChecks(containerId, items, checkedIds) {
+    const box = document.getElementById(containerId);
+    box.innerHTML = '';
+    if (!items.length) {
+      box.innerHTML = '<span class="cc-bind-list">（暂无可选项）</span>';
+      return;
+    }
+    items.forEach(function (it) {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = it.id;
+      cb.checked = checkedIds.indexOf(it.id) !== -1;
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + (it.title || it.name || ('#' + it.id))));
+      box.appendChild(label);
+    });
+  }
+
+  function checkedIds(containerId) {
+    return Array.prototype.slice.call(
+      document.getElementById(containerId).querySelectorAll('input:checked')
+    ).map(function (cb) { return parseInt(cb.value, 10); });
+  }
+
+  function openAgentForm(agent) {
+    editingAgentId = agent ? agent.id : null;
+    document.getElementById('cc-agent-form-title').textContent =
+      agent ? '编辑智能体：' + agent.name : '新建智能体';
+    document.getElementById('cc-agent-name').value = agent ? agent.name : '';
+    document.getElementById('cc-agent-prompt').value = agent ? agent.prompt : '';
+    document.getElementById('cc-agent-template').value = '';
+    document.getElementById('cc-agent-enabled').value = (!agent || agent.enabled) ? '1' : '0';
+    const skillIds = agent ? (agent.skills || []).map(function (s) { return s.id; }) : [];
+    const matIds = agent ? (agent.materials || []).map(function (m) { return m.id; }) : [];
+    renderChecks('cc-skill-checks', skillsCache, skillIds);
+    renderChecks('cc-material-checks', materialsCache, matIds);
+    document.getElementById('cc-agent-form').style.display = 'block';
+  }
+
+  function closeAgentForm() {
+    document.getElementById('cc-agent-form').style.display = 'none';
+    editingAgentId = null;
+  }
+
+  function saveAgent() {
+    const body = {
+      name: document.getElementById('cc-agent-name').value.trim(),
+      prompt: document.getElementById('cc-agent-prompt').value.trim(),
+      enabled: document.getElementById('cc-agent-enabled').value === '1',
+      skill_ids: checkedIds('cc-skill-checks'),
+      material_ids: checkedIds('cc-material-checks'),
+    };
+    if (!body.name) { showMessage('名称不能为空', false); return; }
+    if (!body.prompt) { showMessage('角色提示词不能为空', false); return; }
+    const url = editingAgentId
+      ? '/api/agents/' + editingAgentId + '/update'
+      : '/api/agents';
+    CC.authFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (r) {
+      if (!r.ok) { showMessage(r.d.error || '保存失败', false); return; }
+      showMessage(editingAgentId ? '智能体已更新，已绑定会话从下一轮生效' : '智能体已创建', true);
+      closeAgentForm();
+      return refreshAgentData();
+    }).catch(function () { showMessage('保存失败，请重试', false); });
+  }
+
+  function refreshAgentData() {
+    return loadAgents().then(renderAgentTable);
+  }
+
+  function refreshAllTeacherData() {
+    return Promise.all([
+      loadSkills().then(renderSkillTable),
+      loadMaterials(),
+      loadTemplates(),
+    ]).then(refreshAgentData);
+  }
+
+  document.getElementById('cc-show-agent-form').addEventListener('click', function () {
+    openAgentForm(null);
+  });
+  document.getElementById('cc-cancel-agent').addEventListener('click', closeAgentForm);
+  document.getElementById('cc-save-agent').addEventListener('click', saveAgent);
+
+  document.getElementById('cc-agent-template').addEventListener('change', function () {
+    const id = parseInt(this.value, 10);
+    if (!id) { return; }
+    for (let i = 0; i < templatesCache.length; i++) {
+      if (templatesCache[i].id === id) {
+        document.getElementById('cc-agent-prompt').value = templatesCache[i].body;
+        return;
+      }
+    }
+  });
+
+  document.getElementById('cc-show-tpl-form').addEventListener('click', function () {
+    document.getElementById('cc-tpl-form').style.display = 'block';
+  });
+  document.getElementById('cc-cancel-tpl').addEventListener('click', function () {
+    document.getElementById('cc-tpl-form').style.display = 'none';
+  });
+  document.getElementById('cc-save-tpl').addEventListener('click', function () {
+    const name = document.getElementById('cc-tpl-name').value.trim();
+    const description = document.getElementById('cc-tpl-desc').value.trim();
+    const body = document.getElementById('cc-tpl-body').value.trim();
+    if (!name) { showMessage('模板名称不能为空', false); return; }
+    if (!body) { showMessage('模板正文不能为空', false); return; }
+    CC.authFetch('/api/prompt-templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, description: description, body: body }),
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (r) {
+      if (!r.ok) { showMessage(r.d.error || '保存失败', false); return; }
+      showMessage('提示词模板已创建', true);
+      document.getElementById('cc-tpl-form').style.display = 'none';
+      document.getElementById('cc-tpl-name').value = '';
+      document.getElementById('cc-tpl-desc').value = '';
+      document.getElementById('cc-tpl-body').value = '';
+      return loadTemplates();
+    }).catch(function () { showMessage('保存失败，请重试', false); });
+  });
+  document.getElementById('cc-tpl-table').addEventListener('click', function (e) {
+    const id = e.target.getAttribute('data-tpl-del');
+    if (!id) { return; }
+    if (!window.confirm('删除这个提示词模板？已由它创建的智能体不受影响。')) { return; }
+    CC.authFetch('/api/prompt-templates/' + id, { method: 'DELETE' })
+      .then(function () { return loadTemplates(); })
+      .catch(function () { showMessage('删除失败', false); });
+  });
+
+  document.getElementById('cc-agent-table').addEventListener('click', function (e) {
+    const btn = e.target.getAttribute('data-act') ? e.target : null;
+    if (!btn) { return; }
+    const id = parseInt(btn.getAttribute('data-id'), 10);
+    const agent = agents.filter(function (a) { return a.id === id; })[0];
+    if (!agent) { return; }
+    if (btn.getAttribute('data-act') === 'edit') {
+      openAgentForm(agent);
+    } else {
+      CC.authFetch('/api/agents/' + id + '/toggle', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function () { return refreshAgentData(); })
+        .catch(function () { showMessage('操作失败', false); });
+    }
+  });
+
+  document.getElementById('cc-show-skill-form').addEventListener('click', function () {
+    document.getElementById('cc-skill-form').style.display = 'block';
+  });
+  document.getElementById('cc-cancel-skill').addEventListener('click', function () {
+    document.getElementById('cc-skill-form').style.display = 'none';
+  });
+  document.getElementById('cc-save-skill').addEventListener('click', function () {
+    const name = document.getElementById('cc-skill-name').value.trim();
+    const triggers = document.getElementById('cc-skill-triggers').value.trim();
+    const fileInput = document.getElementById('cc-skill-file');
+    let promise;
+    if (fileInput.files && fileInput.files.length) {
+      const fd = new FormData();
+      fd.append('name', name);
+      fd.append('triggers', triggers);
+      fd.append('file', fileInput.files[0]);
+      promise = CC.authFetch('/api/skills', { method: 'POST', body: fd });
+    } else {
+      promise = CC.authFetch('/api/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name,
+          triggers: triggers,
+          instruction: document.getElementById('cc-skill-instruction').value.trim(),
+        }),
+      });
+    }
+    promise.then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (r) {
+      if (!r.ok) { showMessage(r.d.error || '保存失败', false); return; }
+      showMessage('技能已创建，可在智能体上绑定', true);
+      document.getElementById('cc-skill-form').style.display = 'none';
+      document.getElementById('cc-skill-name').value = '';
+      document.getElementById('cc-skill-triggers').value = '';
+      document.getElementById('cc-skill-instruction').value = '';
+      fileInput.value = '';
+      return loadSkills().then(renderSkillTable);
+    }).catch(function () { showMessage('保存失败，请重试', false); });
+  });
+
+  document.getElementById('cc-skill-table').addEventListener('click', function (e) {
+    const id = e.target.getAttribute('data-skill-toggle');
+    if (!id) { return; }
+    CC.authFetch('/api/skills/' + id + '/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: e.target.textContent === '启用' }),
+    }).then(function () { return loadSkills().then(renderSkillTable); })
+      .catch(function () { showMessage('操作失败', false); });
+  });
+
+  // ---- boot ----
+
+  if (isTeacher) {
+    document.getElementById('cc-config-card').style.display = 'block';
+    refreshAllTeacherData();
+  }
+  loadConversations();
+})();
+</script>
+{% endblock %}

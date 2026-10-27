@@ -209,6 +209,49 @@
     }
     .pku-link-row a:hover { text-decoration: underline; }
   </style>
+  <script>
+    // Shared auth helpers. The JWT lives in localStorage and is attached to
+    // every protected request as `Authorization: Bearer <token>`.
+    // Defined in <head> so page scripts (which run before the footer) can use it.
+    (function () {
+      const TOKEN_KEY = 'cc_token';
+      const USER_KEY = 'cc_user';
+
+      window.CC = {
+        getToken: function () { return localStorage.getItem(TOKEN_KEY); },
+        getUser: function () {
+          try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
+          catch (e) { return null; }
+        },
+        setAuth: function (token, user) {
+          localStorage.setItem(TOKEN_KEY, token);
+          localStorage.setItem(USER_KEY, JSON.stringify(user || {}));
+        },
+        clearAuth: function () {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+        },
+        requireAuth: function () {
+          if (!localStorage.getItem(TOKEN_KEY)) { location.href = '/login'; return false; }
+          return true;
+        },
+        authFetch: function (url, opts) {
+          opts = opts || {};
+          const headers = Object.assign({}, opts.headers || {});
+          const token = localStorage.getItem(TOKEN_KEY);
+          if (token) { headers['Authorization'] = 'Bearer ' + token; }
+          return fetch(url, Object.assign({}, opts, { headers: headers })).then(function (resp) {
+            if (resp.status === 401) {
+              CC.clearAuth();
+              location.href = '/login';
+              throw new Error('unauthorized');
+            }
+            return resp;
+          });
+        },
+      };
+    })();
+  </script>
 </head>
 <body>
   <header class="pku-header">
@@ -219,14 +262,13 @@
         <div class="subtitle">北京大学 · 教学材料管理与知识库系统</div>
       </div>
       <nav class="pku-header-nav">
-        {% if session.get('user_id') %}
-          <span style="font-size:14px;opacity:0.9">{{ '教师' if session.get('role') == 'teacher' else '学生' }}</span>
-          <a href="/materials">材料列表</a>
-          <a href="/search">知识库检索</a>
-          <a href="/logout">登出</a>
-        {% else %}
-          <a href="/login">登录</a>
-        {% endif %}
+        <a href="/assistant" class="cc-auth-only">解题助手</a>
+        <a href="/materials" class="cc-auth-only">材料列表</a>
+        <a href="/mcp" class="cc-auth-only">MCP 管理</a>
+        <a href="/docs">接口文档</a>
+        <span id="cc-nav-user"></span>
+        <a href="#" id="cc-logout" class="cc-auth-only">登出</a>
+        <a href="/login" id="cc-login-link">登录</a>
       </nav>
     </div>
     <div class="pku-header-bar"></div>
@@ -240,5 +282,33 @@
     CampusClaw &copy; 2026 · Powered by Flask + SQLite + ChromaDB ·
     <a href="/health">Health</a>
   </footer>
+
+  <script>
+    // Reflect the auth state in the nav (runs after the DOM exists).
+    (function () {
+      const user = CC.getUser();
+      const signedIn = !!CC.getToken();
+      document.querySelectorAll('.cc-auth-only').forEach(function (el) {
+        el.style.display = signedIn ? '' : 'none';
+      });
+      const loginLink = document.getElementById('cc-login-link');
+      if (loginLink) { loginLink.style.display = signedIn ? 'none' : ''; }
+      const slot = document.getElementById('cc-nav-user');
+      if (slot && user) {
+        slot.textContent = (user.role === 'teacher' ? '教师' : '学生') +
+          (user.username ? ' · ' + user.username : '');
+        slot.style.fontSize = '14px';
+        slot.style.opacity = '0.9';
+      }
+      const logout = document.getElementById('cc-logout');
+      if (logout) {
+        logout.addEventListener('click', function (e) {
+          e.preventDefault();
+          CC.clearAuth();
+          location.href = '/login';
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

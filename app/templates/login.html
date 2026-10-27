@@ -3,14 +3,8 @@
 {% block content %}
 <div class="pku-card" style="max-width:420px;margin:60px auto;">
   <h2>用户登录</h2>
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="pku-alert">{{ message }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
-  <form method="post" action="/login">
+  <div id="login-error" class="pku-alert" style="display:none"></div>
+  <form id="login-form">
     <div class="pku-form-group">
       <label>用户名</label>
       <input type="text" name="username" required autofocus>
@@ -22,4 +16,46 @@
     <button type="submit" class="pku-btn">登录</button>
   </form>
 </div>
+
+<script>
+  (function () {
+    const form = document.getElementById('login-form');
+    const errBox = document.getElementById('login-error');
+
+    // Already signed in? Skip straight to the assistant.
+    if (CC.getToken()) { location.href = '/assistant'; return; }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      errBox.style.display = 'none';
+      let resp;
+      try {
+        resp = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: form.username.value.trim(),
+            password: form.password.value,
+          }),
+        });
+      } catch (err) {
+        errBox.textContent = '网络错误，请重试';
+        errBox.style.display = 'block';
+        return;
+      }
+
+      if (resp.ok) {
+        const data = await resp.json();
+        CC.setAuth(data.token, data.user);
+        location.href = '/assistant';
+        return;
+      }
+
+      let msg = '用户名或密码错误';
+      try { const d = await resp.json(); if (d.error) msg = d.error; } catch (err) {}
+      errBox.textContent = msg;
+      errBox.style.display = 'block';
+    });
+  })();
+</script>
 {% endblock %}

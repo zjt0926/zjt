@@ -2,72 +2,20 @@
 {% block title %}本班材料列表 · CampusClaw{% endblock %}
 {% block content %}
 
-{% if request.args.get('upload_error') %}
-<div class="pku-alert" style="background:#fef0f0;color:#94070a;border-color:#fbc4c4;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
-  {{ request.args.get('upload_error') }}
-</div>
-{% endif %}
-{% if request.args.get('upload_ok') %}
-<div class="pku-alert" style="background:#f0f9ff;color:#1565c0;border-color:#b3d8ff;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
-  {{ request.args.get('upload_ok') }}
-</div>
-{% endif %}
-{% if request.args.get('delete_ok') %}
-<div class="pku-alert" style="background:#f0f9ff;color:#1565c0;border-color:#b3d8ff;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
-  {{ request.args.get('delete_ok') }}
-</div>
-{% endif %}
-{% if request.args.get('delete_error') %}
-<div class="pku-alert" style="background:#fef0f0;color:#94070a;border-color:#fbc4c4;font-size:14px;padding:12px 16px;border-radius:4px;margin-bottom:20px">
-  {{ request.args.get('delete_error') }}
-</div>
-{% endif %}
+<div id="cc-messages"></div>
 
 <div class="pku-card">
   <h2>本班材料列表</h2>
   <p style="margin-bottom:16px;font-size:14px;color:var(--pku-text-light)">
-    当前角色：
-    <span class="pku-badge {{ 'pku-badge-teacher' if role == 'teacher' else 'pku-badge-student' }}">{{ '教师' if role == 'teacher' else '学生' }}</span>
-    班级ID：{{ class_id }}
+    当前角色：<span id="cc-role-badge" class="pku-badge"></span>
+    班级ID：<span id="cc-class-id">-</span>
   </p>
-
-  {% if materials %}
-    <table class="pku-table">
-      <thead>
-        <tr><th>标题</th><th width="100">ID</th><th width="120">上传时间</th><th width="140">操作</th></tr>
-      </thead>
-      <tbody>
-        {% for m in materials %}
-        <tr>
-          <td><a href="/materials/{{ m.id }}">{{ m.title }}</a></td>
-          <td>{{ m.id }}</td>
-          <td>{{ m.created_at[:16] if m.created_at else '-' }}</td>
-          <td>
-            {% if m.file_path %}
-              <a href="/materials/{{ m.id }}/download">下载</a>
-            {% else %}
-              -
-            {% endif %}
-            {% if role == 'teacher' or m.uploaded_by == session.get('user_id') %}
-              <form method="post" action="/materials/{{ m.id }}/delete" style="display:inline;margin-left:8px"
-                    onsubmit="return confirm('确定删除「{{ m.title }}」？')">
-                <button type="submit" style="background:none;border:none;color:#94070a;cursor:pointer;font-size:14px">删除</button>
-              </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <div class="pku-empty">暂无材料</div>
-  {% endif %}
+  <div id="cc-material-list"><div class="pku-empty">加载中…</div></div>
 </div>
 
-{% if role == 'teacher' %}
-<div class="pku-card">
+<div class="pku-card" id="cc-upload-card" style="display:none">
   <h2>上传材料</h2>
-  <form method="post" action="/materials/upload" enctype="multipart/form-data">
+  <form id="cc-upload-form">
     <div class="pku-form-group">
       <label>标题（留空则使用文件名）</label>
       <input type="text" name="title">
@@ -79,5 +27,148 @@
     <button type="submit" class="pku-btn">上传</button>
   </form>
 </div>
-{% endif %}
+
+<script>
+  (function () {
+    if (!CC.requireAuth()) { return; }
+
+    const user = CC.getUser() || {};
+    const isTeacher = user.role === 'teacher';
+    const listEl = document.getElementById('cc-material-list');
+    const msgBox = document.getElementById('cc-messages');
+    const roleBadge = document.getElementById('cc-role-badge');
+
+    roleBadge.className = 'pku-badge ' + (isTeacher ? 'pku-badge-teacher' : 'pku-badge-student');
+    roleBadge.textContent = isTeacher ? '教师' : '学生';
+    if (isTeacher) { document.getElementById('cc-upload-card').style.display = 'block'; }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function showMessage(text, ok) {
+      const div = document.createElement('div');
+      div.className = 'pku-alert';
+      div.style.cssText = ok
+        ? 'background:#f0f9ff;color:#1565c0;border-color:#b3d8ff;font-size:14px'
+        : 'background:#fef0f0;color:#94070a;border-color:#fbc4c4;font-size:14px';
+      div.textContent = text;
+      msgBox.innerHTML = '';
+      msgBox.appendChild(div);
+    }
+
+    function render(materials) {
+      if (!materials || !materials.length) {
+        listEl.innerHTML = '<div class="pku-empty">暂无材料</div>';
+        return;
+      }
+      let rows = '';
+      materials.forEach(function (m) {
+        const canDelete = isTeacher || m.uploaded_by === user.id;
+        const download = m.file_path
+          ? '<a href="#" data-download="' + m.id + '">下载</a>'
+          : '-';
+        const del = canDelete
+          ? '<button type="button" data-delete="' + m.id + '" data-title="' +
+              escapeHtml(m.title) +
+              '" style="background:none;border:none;color:#94070a;cursor:pointer;font-size:14px;margin-left:8px">删除</button>'
+          : '';
+        rows += '<tr>' +
+          '<td><a href="/materials/' + m.id + '">' + escapeHtml(m.title) + '</a></td>' +
+          '<td>' + m.id + '</td>' +
+          '<td>' + escapeHtml((m.created_at || '').slice(0, 16) || '-') + '</td>' +
+          '<td>' + download + del + '</td>' +
+          '</tr>';
+      });
+      listEl.innerHTML =
+        '<table class="pku-table"><thead><tr>' +
+        '<th>标题</th><th width="100">ID</th><th width="120">上传时间</th><th width="140">操作</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    function load() {
+      return CC.authFetch('/api/materials')
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          document.getElementById('cc-class-id').textContent = data.class_id;
+          render(data.materials);
+        })
+        .catch(function () {
+          listEl.innerHTML = '<div class="pku-empty">加载失败，请刷新重试</div>';
+        });
+    }
+
+    function downloadMaterial(materialId) {
+      CC.authFetch('/materials/' + materialId + '/download')
+        .then(function (resp) {
+          if (!resp.ok) { throw new Error('download failed'); }
+          const disp = resp.headers.get('Content-Disposition') || '';
+          let name = 'material_' + materialId;
+          const utf8 = disp.match(/filename\*=UTF-8''([^;]+)/i);
+          const plain = disp.match(/filename="?([^";]+)"?/i);
+          if (utf8) { name = decodeURIComponent(utf8[1]); }
+          else if (plain) { name = plain[1]; }
+          return resp.blob().then(function (blob) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          });
+        })
+        .catch(function () { showMessage('下载失败，请重试', false); });
+    }
+
+    function deleteMaterial(materialId, title) {
+      if (!window.confirm('确定删除「' + title + '」？')) { return; }
+      CC.authFetch('/materials/' + materialId + '/delete', { method: 'POST' })
+        .then(function (resp) {
+          return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+        })
+        .then(function (r) {
+          if (r.ok) { showMessage(r.data.message || '已删除', true); load(); }
+          else { showMessage((r.data && r.data.error) || '删除失败', false); }
+        })
+        .catch(function () { showMessage('删除失败，请重试', false); });
+    }
+
+    listEl.addEventListener('click', function (e) {
+      const dl = e.target.closest('[data-download]');
+      if (dl) { e.preventDefault(); downloadMaterial(dl.getAttribute('data-download')); return; }
+      const del = e.target.closest('[data-delete]');
+      if (del) { deleteMaterial(del.getAttribute('data-delete'), del.getAttribute('data-title')); }
+    });
+
+    const uploadForm = document.getElementById('cc-upload-form');
+    uploadForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const fd = new FormData();
+      fd.append('title', uploadForm.title.value.trim());
+      fd.append('file', uploadForm.file.files[0]);
+      if (!uploadForm.file.files.length) { showMessage('请选择文件', false); return; }
+
+      CC.authFetch('/materials/upload', { method: 'POST', body: fd })
+        .then(function (resp) {
+          return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+        })
+        .then(function (r) {
+          if (r.ok) {
+            showMessage(r.data.message || '上传成功', true);
+            uploadForm.reset();
+            load();
+          } else {
+            showMessage((r.data && r.data.error) || '上传失败', false);
+          }
+        })
+        .catch(function () { showMessage('上传失败，请重试', false); });
+    });
+
+    load();
+  })();
+</script>
 {% endblock %}
